@@ -89,6 +89,16 @@ def password_policy(enabled):
 def password_enabled():
     return effective().get('passwordauthentication')=='yes'
 
+def detect_ssh_port():
+    try:
+        for line in run('sshd','-T',capture_output=True).stdout.splitlines():
+            parts=line.strip().split()
+            if len(parts)==2 and parts[0]=='port' and parts[1].isdigit():
+                port=int(parts[1])
+                if 1<=port<=65535:return port
+    except Exception:pass
+    return 22
+
 def public_ip(value,version):
     if not isinstance(value,str) or '%' in value:return None
     try:address=ipaddress.ip_address(value.strip())
@@ -309,6 +319,7 @@ def create(args):
     if args.role=='sudo' and not shutil.which('visudo'):
         raise RuntimeError('缺少 sudo/visudo，无法创建高权限账号')
     host=connection_host(args.host)
+    port=args.port if args.port is not None else detect_ssh_port()
     seconds=duration_seconds(args.duration)
     user_shell='/bin/bash' if pathlib.Path('/bin/bash').exists() else '/bin/sh'
     # Record creation immediately after useradd; failure rolls back the new account.
@@ -334,11 +345,11 @@ def create(args):
         raise
     print('\n临时 SSH 登录信息（密码只显示一次）')
     display_host='['+host+']' if ':' in host and not host.startswith('[') else host
-    print('地址：'+display_host+':'+str(args.port))
+   print('地址：'+display_host+':'+str(port))
     print('账号：'+name)
     print('密码：'+password)
     print('到期：'+datetime.datetime.fromtimestamp(expires,datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'))
-    print('登录：ssh -p '+str(args.port)+' '+name+'@'+host)
+    print('登录：ssh -p '+str(port)+' '+name+'@'+host)
     print('提前撤销：hssh revoke '+name)
     print(('高权限用户，可使用 sudo（需输入该账号密码）。' if args.role=='sudo' else '普通用户，无 sudo。')+'请从另一终端验证新连接。')
 
@@ -355,7 +366,7 @@ def parser():
     for a in ['install','list','cleanup','uninstall']:s.add_parser(a)
     r=s.add_parser('revoke');r.add_argument('name')
     q=s.add_parser('password');q.add_argument('state',choices=['on','off'])
-    c=s.add_parser('create');c.add_argument('duration',help='1h、2h、3h 或自定义 90m/4h/2d');c.add_argument('--name');c.add_argument('--host');c.add_argument('--port',type=int,default=22);c.add_argument('--role',choices=['normal','sudo'],default='normal')
+    c=s.add_parser('create');c.add_argument('duration',help='1h、2h、3h 或自定义 90m/4h/2d');c.add_argument('--name');c.add_argument('--host');c.add_argument('--port',type=int,default=None);c.add_argument('--role',choices=['normal','sudo'],default='normal')
     return p
 
 def show_commands():
@@ -372,7 +383,7 @@ def show_commands():
 
 def menu(p):
     while True:
-        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'，不影响密钥登录）\n3 查看 / 提前撤销临时账号\n4 彻底卸载并恢复系统默认状态\n5 查看内置命令行用法 (hssh)\n0 退出')
+        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'，不影响密钥登录）\n3 查看 / 提前撤销临时账号\n4 查看内置命令行用法 (hssh)\n5 彻底卸载并恢复系统默认状态\n0 退出')
         try:
             choice=input('选择: ').strip()
             if choice=='0':return
@@ -400,12 +411,12 @@ def menu(p):
                 if input('将断开连接并删除账号，输入 yes 确认: ').strip()!='yes':continue
                 argv=['revoke',name]
             elif choice=='4':
+                show_commands()
+                continue
+            elif choice=='5':
                 if input('将撤销所有临时账号、还原 SSH 配置并彻底卸载本工具，输入 yes 确认: ').strip()!='yes':continue
                 subprocess.run([sys.executable,str(pathlib.Path(__file__).resolve()),'uninstall'],check=True)
                 return
-            elif choice=='5':
-                show_commands()
-                continue
             else:raise ValueError('无效选项')
             # Run each operation separately: never hold the cleanup lock while waiting for input.
             subprocess.run([sys.executable,str(pathlib.Path(__file__).resolve()),*argv],check=True)
@@ -418,7 +429,7 @@ def main():
     os.umask(0o077);BASE.mkdir(mode=0o700,parents=True,exist_ok=True)
     if not args.action:return menu(p)
     if args.action=='create':
-        if not 1<=args.port<=65535:raise ValueError('端口范围 1–65535')
+        if args.port is not None and not 1<=args.port<=65535:raise ValueError('端口范围 1–65535')
         # Do not block expiry cleanup while probing the network or awaiting input.
         args.host=connection_host(args.host)
     with open(BASE/'.lock','w') as lock:
