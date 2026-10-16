@@ -162,15 +162,15 @@ def valid_name(name):
     return name
 
 def write(path, text, mode=0o600):
-  path = pathlib.Path(path)
-  path.parent.mkdir(parents=True, exist_ok=True)
-  tmp = path.with_name(path.name + '.tmp')
-  with open(tmp, 'w') as f:
-    os.chmod(tmp, mode)
-    f.write(text)
-    f.flush()
-    os.fsync(f.fileno())
-  os.replace(tmp, path)
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + '.tmp')
+    with open(tmp, 'w') as f:
+        os.chmod(tmp, mode)
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 def meta(name): return BASE/(valid_name(name)+'.json')
 def sudoers_path(name): return SUDOERS_DIR/('harness-ssh-'+valid_name(name))
 def grant_sudo(name):
@@ -271,7 +271,6 @@ def uninstall():
         if f.exists():
             try:f.unlink()
             except OSError:pass
-    if BASE.exists():shutil.rmtree(BASE,ignore_errors=True)
     print('已彻底卸载并恢复系统初始状态（当前 SSH 连接不受影响）。')
 
 def install():
@@ -345,13 +344,11 @@ def create(args):
         raise
     print('\n临时 SSH 登录信息（密码只显示一次）')
     display_host='['+host+']' if ':' in host and not host.startswith('[') else host
-   print('地址：'+display_host+':'+str(port))
+    print('地址：'+display_host+':'+str(port))
     print('账号：'+name)
     print('密码：'+password)
     print('到期：'+datetime.datetime.fromtimestamp(expires,datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'))
-    print('登录：ssh -p '+str(port)+' '+name+'@'+host)
-    print('提前撤销：hssh revoke '+name)
-    print(('高权限用户，可使用 sudo（需输入该账号密码）。' if args.role=='sudo' else '普通用户，无 sudo。')+'请从另一终端验证新连接。')
+    print('登录：ssh -p '+str(port)+' '+name+'@'+display_host)
 
 def list_accounts():
     records=sorted(BASE.glob('hs_*.json'))
