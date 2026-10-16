@@ -133,7 +133,6 @@ def detect_public_ip():
                            capture_output=True,timeout=4).stdout
                 address=public_ip(result,version)
                 if address:
-                    print('提示：已查询公网出口 IP；NAT 入站地址或端口可能不同，必要时用 --host / --port 覆盖。',file=sys.stderr)
                     return address
             except (OSError,ValueError,subprocess.SubprocessError):pass
     raise RuntimeError('无法自动识别公网 IPv4/IPv6（路由不可用或直连 HTTPS 查询失败）；请用 --host 指定实际可连接地址，NAT 映射端口用 --port 指定')
@@ -395,7 +394,15 @@ def menu(p):
                 role=input('账号权限 1=普通用户（默认） 2=高权限 sudo: ').strip() or '1'
                 if role not in ('1','2'):raise ValueError('无效账号权限选项')
                 if role=='2' and input('高权限账号可通过 sudo 管理整台服务器，输入 yes 确认: ').strip()!='yes':continue
-                argv=['create',duration,'--role','sudo' if role=='2' else 'normal']
+                try:default_host=detect_public_ip()
+                except RuntimeError:default_host=''
+                host=input(f'连接地址（IP 或域名，回车默认 {default_host or "需要手动输入"}）: ').strip() or default_host
+                if not host:raise ValueError('未指定连接地址，已取消创建账号')
+                default_port=detect_ssh_port()
+                port_str=input(f'SSH 端口（NAT 机器请填外部端口，回车默认 {default_port}）: ').strip()
+                port=int(port_str) if port_str else default_port
+                if not 1<=port<=65535:raise ValueError('端口范围 1–65535')
+                argv=['create',duration,'--role','sudo' if role=='2' else 'normal','--host',host,'--port',str(port)]
             elif choice=='2':
                 target='off' if password_enabled() else 'on'
                 if input('将'+('关闭' if target=='off' else '开启')+'服务器 SSH 密码登录（不影响 SSH 密钥登录及当前连接），输入 yes 确认: ').strip()!='yes':continue
