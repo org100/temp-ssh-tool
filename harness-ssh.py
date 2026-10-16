@@ -192,7 +192,7 @@ def revoke(name):
     result=subprocess.run(['pkill','-KILL','-u',str(u.pw_uid)])
     if result.returncode not in (0,1):raise RuntimeError('终止账号进程失败')
     time.sleep(.15)
-    run('userdel','--remove',name)
+    run('userdel','--remove',name,stderr=subprocess.DEVNULL)
     p.unlink()
     keydir=BASE/('key-'+name)
     if keydir.exists():shutil.rmtree(keydir)
@@ -415,6 +415,8 @@ def main():
         elif args.action=='cleanup':cleanup()
         elif args.action=='password':password_policy(args.state=='on')
         else:list_accounts()
+    if args.action=='uninstall' and BASE.exists():
+        shutil.rmtree(BASE,ignore_errors=True)
 if __name__=='__main__':
     try:main()
     except Exception as e:print('错误:',e,file=sys.stderr);sys.exit(1)
