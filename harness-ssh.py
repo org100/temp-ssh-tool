@@ -198,7 +198,6 @@ def revoke(name):
     if keydir.exists():shutil.rmtree(keydir)
     print('已撤销:',name)
 def cleanup():
-    ensure_cleanup_daemon()
     failed=False
     for p in BASE.glob('hs_*.json'):
         try:
@@ -215,7 +214,7 @@ def stop_cleanup_daemon():
         if pid.isdigit() and cmdline_file.exists():
             try:
                 if 'harness-ssh' in cmdline_file.read_bytes().decode('utf-8','ignore'):
-                    subprocess.run(['kill','-TERM',pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                    subprocess.run(['kill','-KILL',pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             except OSError:pass
         try:pidfile.unlink()
         except OSError:pass
@@ -286,7 +285,7 @@ def install():
     else:
         if pathlib.Path('/etc/local.d').exists():
             start_hook=pathlib.Path('/etc/local.d/harness-ssh.start')
-            write(start_hook,'#!/bin/sh\n/usr/local/sbin/harness-ssh cleanup >/dev/null 2>&1 || true\n',0o755)
+            write(start_hook,'#!/bin/sh\n/usr/local/sbin/harness-ssh cleanup >/dev/null 2>&1 || true\nsh -c "echo \\$\\$ > /var/lib/harness-ssh/.cleanup.pid; while :; do sleep 15; /usr/local/sbin/harness-ssh cleanup >/dev/null 2>&1 || true; done" >/dev/null 2>&1 &\n',0o755)
             if shutil.which('rc-update'):
                 subprocess.run(['rc-update','add','local','default'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         ensure_cleanup_daemon()
