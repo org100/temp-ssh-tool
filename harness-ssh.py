@@ -209,6 +209,7 @@ def install():
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     service=pathlib.Path('/etc/systemd/system/harness-ssh-cleanup.service')
     timer=pathlib.Path('/etc/systemd/system/harness-ssh-cleanup.timer')
+    APP.parent.mkdir(parents=True,exist_ok=True)
     if APP.exists() and APP.resolve()!=source:shutil.copy2(APP,BASE/(APP.name+'.backup-'+stamp))
     if source!=APP:write(APP,source.read_text(),0o700)
     if has_systemd():
@@ -227,7 +228,6 @@ def install():
         ensure_cleanup_daemon()
     run('groupadd','--force','harness-temp')
     shortcut=pathlib.Path('/usr/local/bin/hssh')
-    shortcut.parent.mkdir(parents=True,exist_ok=True)
     if shortcut.exists():shutil.copy2(shortcut,BASE/('hssh.backup-'+stamp))
     write(shortcut,'#!/bin/sh\nif [ "$(id -u)" -ne 0 ]; then exec sudo /usr/local/sbin/harness-ssh "$@"; fi\nexec /usr/local/sbin/harness-ssh "$@"\n',0o755)
     current=CONFIG.read_text()
