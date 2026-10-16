@@ -358,9 +358,21 @@ def parser():
     c=s.add_parser('create');c.add_argument('duration',help='1h、2h、3h 或自定义 90m/4h/2d');c.add_argument('--name');c.add_argument('--host');c.add_argument('--port',type=int,default=22);c.add_argument('--role',choices=['normal','sudo'],default='normal')
     return p
 
+def show_commands():
+    print('\n--- hssh 命令行快捷用法 ---\n'
+          'hssh password on                       # 开启服务器密码登录\n'
+          'hssh create 30m                        # 创建 30 分钟普通账号（支持 Nm/Nh/Nd）\n'
+          'hssh create 2h                         # 创建 2 小时普通账号\n'
+          'hssh create 90m --role sudo            # 创建 90 分钟 sudo 账号（需密码）\n'
+          'hssh create 2h --host example.com --port 2222  # 指定自定义连接地址和端口\n'
+          'hssh list                              # 查看当前所有临时账号\n'
+          'hssh revoke hs_1234abcd                # 提前撤销指定临时账号\n'
+          'hssh password off                      # 关闭服务器密码登录\n'
+          'hssh uninstall                         # 彻底卸载并恢复系统初始状态')
+
 def menu(p):
     while True:
-        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'）\n3 查看 / 提前撤销临时账号\n4 彻底卸载并恢复系统默认状态\n0 退出')
+        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'）\n3 查看 / 提前撤销临时账号\n4 彻底卸载并恢复系统默认状态\n5 查看内置命令行用法 (hssh)\n0 退出')
         try:
             choice=input('选择: ').strip()
             if choice=='0':return
@@ -368,9 +380,9 @@ def menu(p):
                 if not password_enabled():
                     if input('密码登录已关闭，输入 yes 开启后继续: ').strip()!='yes':continue
                     subprocess.run([sys.executable,str(APP),'password','on'],check=True)
-                duration=input('时长 1=1小时 2=2小时 3=3小时 4=自定义 [1]: ').strip() or '1'
-                if duration=='4':duration=input('输入时长（例如 90m / 4h / 2d）: ').strip()
-                else:duration={'1':'1h','2':'2h','3':'3h'}.get(duration,'')
+                duration=input('时长 1=1小时 2=2小时 3=3小时 4=自定义（或直接输入如 15m/30m/2d）[1]: ').strip() or '1'
+                if duration=='4':duration=input('输入时长（分钟 m / 小时 h / 天 d，例如 15m / 90m / 4h / 2d）: ').strip()
+                else:duration={'1':'1h','2':'2h','3':'3h'}.get(duration,duration)
                 duration_seconds(duration)
                 role=input('账号权限 1=普通用户（默认） 2=高权限 sudo: ').strip() or '1'
                 if role not in ('1','2'):raise ValueError('无效账号权限选项')
@@ -391,6 +403,9 @@ def menu(p):
                 if input('将撤销所有临时账号、还原 SSH 配置并彻底卸载本工具，输入 yes 确认: ').strip()!='yes':continue
                 subprocess.run([sys.executable,str(pathlib.Path(__file__).resolve()),'uninstall'],check=True)
                 return
+            elif choice=='5':
+                show_commands()
+                continue
             else:raise ValueError('无效选项')
             # Run each operation separately: never hold the cleanup lock while waiting for input.
             subprocess.run([sys.executable,str(pathlib.Path(__file__).resolve()),*argv],check=True)
