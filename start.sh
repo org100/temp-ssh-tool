@@ -61,10 +61,10 @@ case "${ID:-}" in
         if ! grep -qE '^[#@]includedir[[:space:]]+/etc/sudoers\.d' /etc/sudoers 2>/dev/null; then
             printf '\n#includedir /etc/sudoers.d\n' >> /etc/sudoers
         fi
-        if [ "$new_ssh" -eq 1 ]; then
-            ssh-keygen -A
-            mkdir -p /run/sshd
-            /usr/sbin/sshd -t
+        ssh-keygen -A
+        mkdir -p /run/sshd
+        /usr/sbin/sshd -t
+        if ! pgrep -x sshd >/dev/null 2>&1; then
             if command -v rc-service >/dev/null 2>&1 && [ -d /run/openrc ]; then
                 rc-update add sshd default >/dev/null 2>&1 || true
                 rc-service sshd start
