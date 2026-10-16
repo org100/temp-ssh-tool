@@ -206,6 +206,65 @@ def cleanup():
             if m['expires']<=time.time():revoke(p.stem)
         except Exception as e:failed=True;print(str(e),file=sys.stderr)
     if failed:raise RuntimeError('部分到期账号清理失败，下一轮重试；请检查 journalctl -u harness-ssh-cleanup')
+
+def stop_cleanup_daemon():
+    pidfile=BASE/'.cleanup.pid'
+    if pidfile.exists():
+        pid=pidfile.read_text().strip()
+        cmdline_file=pathlib.Path(f'/proc/{pid}/cmdline')
+        if pid.isdigit() and cmdline_file.exists():
+            try:
+                if 'harness-ssh' in cmdline_file.read_bytes().decode('utf-8','ignore'):
+                    subprocess.run(['kill','-TERM',pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            except OSError:pass
+        try:pidfile.unlink()
+        except OSError:pass
+
+def uninstall():
+    # 1. 撤销所有临时账号并清理其 sudoers 规则
+    failed=[]
+    for p in sorted(BASE.glob('hs_*.json')):
+        try:revoke(p.stem)
+        except Exception as e:failed.append(f'{p.stem}: {e}')
+    if failed:raise RuntimeError('部分临时账号撤销失败，已中止卸载：\n'+'\n'.join(failed))
+    for rule in SUDOERS_DIR.glob('harness-ssh-*'):
+        try:rule.unlink()
+        except OSError:pass
+    # 2. 安全还原 sshd_config（精准剥离管理块，校验语法并平滑重载，不断开现有连接）
+    if CONFIG.exists():
+        original=CONFIG.read_text()
+        if BEGIN in original:
+            if original.count(BEGIN)!=original.count(END) or original.count(BEGIN)>1:
+                raise ValueError('SSH 配置管理标记异常，拒绝自动修改 sshd_config')
+            mode=CONFIG.stat().st_mode & 0o777
+            cleaned=re.sub(re.escape(BEGIN)+r'.*?'+re.escape(END)+r'\n?', '', original, flags=re.S)
+            try:
+                write(CONFIG,cleaned,mode);run('sshd','-t');reload_sshd()
+            except Exception:
+                write(CONFIG,original,mode);run('sshd','-t');reload_sshd()
+                raise RuntimeError('还原 SSH 配置失败，已回滚以保护当前 SSH 连接')
+    # 3. 停止并移除定时清理服务（兼容 Debian/Ubuntu systemd 与 Alpine OpenRC/守护进程）
+    if has_systemd():
+        for unit in ['harness-ssh-cleanup.timer','harness-ssh-cleanup.service']:
+            subprocess.run(['systemctl','disable','--now',unit],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            unit_path=pathlib.Path('/etc/systemd/system')/unit
+            if unit_path.exists():unit_path.unlink()
+        subprocess.run(['systemctl','daemon-reload'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    stop_cleanup_daemon()
+    start_hook=pathlib.Path('/etc/local.d/harness-ssh.start')
+    if start_hook.exists():
+        try:start_hook.unlink()
+        except OSError:pass
+    # 4. 删除用户组、快捷指令、状态目录及程序本体
+    if shutil.which('groupdel'):
+        subprocess.run(['groupdel','harness-temp'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    for f in [pathlib.Path('/usr/local/bin/hssh'),APP]:
+        if f.exists():
+            try:f.unlink()
+            except OSError:pass
+    if BASE.exists():shutil.rmtree(BASE,ignore_errors=True)
+    print('已彻底卸载并恢复系统初始状态（当前 SSH 连接不受影响）。')
+
 def install():
     for tool in ['useradd','usermod','userdel','sshd','pkill','chpasswd','ip']:
         if not shutil.which(tool):raise RuntimeError('缺少依赖: '+tool)
@@ -294,7 +353,7 @@ def list_accounts():
 
 def parser():
     p=argparse.ArgumentParser(description=__doc__);s=p.add_subparsers(dest='action')
-    for a in ['install','list','cleanup']:s.add_parser(a)
+    for a in ['install','list','cleanup','uninstall']:s.add_parser(a)
     r=s.add_parser('revoke');r.add_argument('name')
     q=s.add_parser('password');q.add_argument('state',choices=['on','off'])
     c=s.add_parser('create');c.add_argument('duration',help='1h、2h、3h 或自定义 90m/4h/2d');c.add_argument('--name');c.add_argument('--host');c.add_argument('--port',type=int,default=22);c.add_argument('--role',choices=['normal','sudo'],default='normal')
@@ -302,7 +361,7 @@ def parser():
 
 def menu(p):
     while True:
-        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'）\n3 查看 / 提前撤销临时账号\n0 退出')
+        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'）\n3 查看 / 提前撤销临时账号\n4 彻底卸载并恢复系统默认状态\n0 退出')
         try:
             choice=input('选择: ').strip()
             if choice=='0':return
@@ -329,6 +388,10 @@ def menu(p):
                 valid_name(name)
                 if input('将断开连接并删除账号，输入 yes 确认: ').strip()!='yes':continue
                 argv=['revoke',name]
+            elif choice=='4':
+                if input('将撤销所有临时账号、还原 SSH 配置并彻底卸载本工具，输入 yes 确认: ').strip()!='yes':continue
+                subprocess.run([sys.executable,str(pathlib.Path(__file__).resolve()),'uninstall'],check=True)
+                return
             else:raise ValueError('无效选项')
             # Run each operation separately: never hold the cleanup lock while waiting for input.
             subprocess.run([sys.executable,str(pathlib.Path(__file__).resolve()),*argv],check=True)
@@ -347,6 +410,7 @@ def main():
     with open(BASE/'.lock','w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         if args.action=='install':install()
+        elif args.action=='uninstall':uninstall()
         elif args.action=='create':create(args)
         elif args.action=='revoke':revoke(args.name)
         elif args.action=='cleanup':cleanup()
