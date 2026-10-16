@@ -30,7 +30,7 @@ if (( ${#packages[@]} )); then
 fi
 tmp="$(mktemp -d -t harness-ssh-install.XXXXXXXX)"
 trap 'rm -rf -- "$tmp"' EXIT
-base='https://raw.githubusercontent.com/LYISTR2/temp-ssh-tool/main'
+base='https://raw.githubusercontent.com/org100/temp-ssh-tool/main'
 for file in start.sh harness-ssh.py; do
     curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
         --connect-timeout 15 --max-time 120 --retry 2 "$base/$file" -o "$tmp/$file"
