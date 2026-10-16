@@ -84,7 +84,7 @@ def password_policy(enabled):
             raise RuntimeError('SSH 配置应用失败，且回滚也失败，请检查 '+str(backup)) from restore_error
         raise
     print('服务器 SSH 密码登录已'+('开启' if enabled else '关闭')+'；备份：'+str(backup))
-    print('root 仍受 PermitRootLogin 等规则限制；已有连接不会断开。')
+    print('SSH 密钥登录不受影响；root 仍受 PermitRootLogin 限制；当前已建立的连接不会断开。')
 
 def password_enabled():
     return effective().get('passwordauthentication')=='yes'
@@ -360,19 +360,19 @@ def parser():
 
 def show_commands():
     print('\n--- hssh 命令行快捷用法 ---\n'
-          'hssh password on                       # 开启服务器密码登录\n'
-          'hssh create 30m                        # 创建 30 分钟普通账号（支持 Nm/Nh/Nd）\n'
+          'hssh password on                       # 开启服务器密码登录（不影响密钥登录）\n'
+          'hssh password off                      # 关闭服务器密码登录（仅保留密钥登录）\n'
+          'hssh create 30m                        # 创建 30 分钟普通账号（支持分钟 m / 小时 h / 天 d）\n'
           'hssh create 2h                         # 创建 2 小时普通账号\n'
-          'hssh create 90m --role sudo            # 创建 90 分钟 sudo 账号（需密码）\n'
-          'hssh create 2h --host example.com --port 2222  # 指定自定义连接地址和端口\n'
-          'hssh list                              # 查看当前所有临时账号\n'
-          'hssh revoke hs_1234abcd                # 提前撤销指定临时账号\n'
-          'hssh password off                      # 关闭服务器密码登录\n'
-          'hssh uninstall                         # 彻底卸载并恢复系统初始状态')
+          'hssh create 90m --role sudo            # 创建 90 分钟高权限账号（执行 sudo 需输入密码）\n'
+          'hssh create 2h --host 域名或IP --port 2222  # 自定义终端打印的连接地址与端口（不改服务器配置）\n'
+          'hssh list                              # 查看当前所有临时账号及到期时间\n'
+          'hssh revoke hs_1234abcd                # 立即断开并删除指定临时账号\n'
+          'hssh uninstall                         # 撤销所有临时账号、还原 SSH 配置并彻底卸载')
 
 def menu(p):
     while True:
-        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'）\n3 查看 / 提前撤销临时账号\n4 彻底卸载并恢复系统默认状态\n5 查看内置命令行用法 (hssh)\n0 退出')
+        print('\n=== 临时 SSH 管理 ===\n1 生成临时密码登录信息\n2 开关服务器 SSH 密码登录（当前：'+('开' if password_enabled() else '关')+'，不影响密钥登录）\n3 查看 / 提前撤销临时账号\n4 彻底卸载并恢复系统默认状态\n5 查看内置命令行用法 (hssh)\n0 退出')
         try:
             choice=input('选择: ').strip()
             if choice=='0':return
@@ -390,7 +390,7 @@ def menu(p):
                 argv=['create',duration,'--role','sudo' if role=='2' else 'normal']
             elif choice=='2':
                 target='off' if password_enabled() else 'on'
-                if input('将'+('关闭' if target=='off' else '开启')+'服务器 SSH 密码登录，输入 yes 确认: ').strip()!='yes':continue
+                if input('将'+('关闭' if target=='off' else '开启')+'服务器 SSH 密码登录（不影响 SSH 密钥登录及当前连接），输入 yes 确认: ').strip()!='yes':continue
                 argv=['password',target]
             elif choice=='3':
                 subprocess.run([sys.executable,str(APP),'list'],check=True)
