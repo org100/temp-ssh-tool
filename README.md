@@ -1,10 +1,10 @@
 # TempSSH
 
-一键生成限时 SSH 密码账号，到期自动销毁回收[cite: 4]。支持 Debian 12/13、Ubuntu 22.04/24.04 及 Alpine Linux[cite: 1, 4]。
+一键生成限时 SSH 密码账号，到期自动销毁回收。支持 Debian 12/13、Ubuntu 22.04/24.04 及 Alpine Linux。
 
 ## 一键安装 / 更新
 
-需 `curl`，以 `root` 或具备 `sudo` 权限的账号运行[cite: 4]：
+需 `curl`，以 `root` 或具备 `sudo` 权限的账号运行：
 
 ```bash
 curl -fsSLO [https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstrap.sh](https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstrap.sh) && sh bootstrap.sh
@@ -17,18 +17,18 @@ curl -fsSLO [https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstr
 
 ```bash
 # 1. 密码认证总开关（仅控制密码登录，绝不影响 SSH 密钥登录）
-hssh password on                               # 开启服务器 SSH 密码认证[cite: 4]
-hssh password off                              # 关闭服务器 SSH 密码认证（仅允许密钥登录）[cite: 4]
+hssh password on                               # 开启服务器 SSH 密码认证
+hssh password off                              # 关闭服务器 SSH 密码认证（仅允许密钥登录）
 
-# 2. 创建临时账号（时长支持：分钟 m / 小时 h / 天 d，范围 1m ~ 30d）[cite: 4]
-hssh create 30m                                # 创建 30 分钟普通账号（无 sudo 权限）[cite: 4, 13]
-hssh create 2h                                 # 创建 2 小时普通账号[cite: 4]
-hssh create 90m --role sudo                    # 创建 90 分钟高权限账号（使用 sudo 时需输入该账号密码）[cite: 4, 13]
-hssh create 2h --host example.com --port 2222  # 针对 NAT/端口转发机器，自定义最终打印的连接地址与端口[cite: 4]
+# 2. 创建临时账号（时长支持：分钟 m / 小时 h / 天 d，范围 1m ~ 30d）
+hssh create 30m                                # 创建 30 分钟普通账号（无 sudo 权限）
+hssh create 2h                                 # 创建 2 小时普通账号
+hssh create 90m --role sudo                    # 创建 90 分钟高权限账号（使用 sudo 时需输入该账号密码）
+hssh create 2h --host example.com --port 2222  # 针对 NAT/端口转发机器，自定义最终打印的连接地址与端口
 
 # 3. 账号管理与卸载
-hssh list                                      # 查看所有临时账号及剩余到期时间[cite: 4, 13]
-hssh revoke hs_1234abcd                        # 立即强制踢出并删除指定临时账号[cite: 4, 13]
+hssh list                                      # 查看所有临时账号及剩余到期时间
+hssh revoke hs_1234abcd                        # 立即强制踢出并删除指定临时账号
 hssh uninstall                                 # 撤销所有临时账号、还原 SSH 配置并彻底卸载本工具
 
 ```
