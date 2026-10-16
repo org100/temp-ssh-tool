@@ -94,7 +94,7 @@ class Suite:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.base = f'https://temp-ssh-fixture.test:{self.server.server_port}'
         bootstrap = (ROOT / 'bootstrap.sh').read_text()
-        old = "base='https://raw.githubusercontent.com/LYISTR2/temp-ssh-tool/main'"
+        old = "base='https://raw.githubusercontent.com/org100/temp-ssh-tool/main'"
         assert bootstrap.count(old) == 1
         (public / 'bootstrap.sh').write_text(bootstrap.replace(old, f"base='{self.base}'"))
         (public / 'broken-download.sh').write_text(bootstrap.replace(old, f"base='{self.base}/missing'"))
@@ -193,7 +193,7 @@ class Suite:
                 launcher = match.group(1)
                 options = []
                 if self.entry == 'launcher':
-                    launcher = launcher.replace('https://raw.githubusercontent.com/LYISTR2/temp-ssh-tool/main/bootstrap.sh',
+                    launcher = launcher.replace('https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstrap.sh',
                                                 self.base + '/bootstrap.sh')
                     options = ['-e', 'CURL_CA_BUNDLE=/fixture/fixture.pem']
                 installed = command('docker', 'exec', *options, self.name, 'bash', '-c', launcher, timeout=420)
