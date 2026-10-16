@@ -33,12 +33,37 @@ def verify_auth(name,enabled):
         raise RuntimeError('AuthenticationMethods 不允许独立密码登录；保留原策略')
     if enabled and fields.get('permittty')=='no':raise RuntimeError('SSH 策略禁止交互式终端登录')
 
+def has_systemd():
+    return pathlib.Path('/run/systemd/system').exists() and shutil.which('systemctl') is not None
+
+def reload_sshd():
+    if has_systemd():
+        for unit in ['ssh.service','sshd.service']:
+            if subprocess.run(['systemctl','is-active','--quiet',unit]).returncode==0:
+                run('systemctl','reload',unit);run('systemctl','is-active','--quiet',unit);return
+        raise RuntimeError('找不到运行中的 SSH systemd 服务')
+    if shutil.which('rc-service') and subprocess.run(['rc-service','sshd','status'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
+        run('rc-service','sshd','reload');return
+    for pf in ['/run/sshd.pid','/var/run/sshd.pid']:
+        p=pathlib.Path(pf)
+        if p.exists():
+            pid=p.read_text().strip()
+            if pid.isdigit() and subprocess.run(['kill','-HUP',pid]).returncode==0:return
+    if subprocess.run(['pkill','-HUP','-x','sshd']).returncode==0:return
+    raise RuntimeError('找不到运行中的 sshd 进程，无法重载配置')
+
+def ensure_cleanup_daemon():
+    if has_systemd():
+        run('systemctl','is-active','--quiet','harness-ssh-cleanup.timer');return
+    pidfile=BASE/'.cleanup.pid'
+    if pidfile.exists():
+        pid=pidfile.read_text().strip()
+        if pid.isdigit() and pathlib.Path(f'/proc/{pid}').exists():return
+    cmd="echo $$ > /var/lib/harness-ssh/.cleanup.pid; while :; do sleep 15; /usr/local/sbin/harness-ssh cleanup >/dev/null 2>&1 || true; done"
+    subprocess.Popen(['/bin/sh','-c',cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
 def password_policy(enabled):
     run('sshd','-t')
-    service=None
-    for unit in ['ssh.service','sshd.service']:
-        if subprocess.run(['systemctl','is-active','--quiet',unit]).returncode==0:service=unit;break
-    if not service:raise RuntimeError('找不到运行中的 SSH systemd 服务')
     original=CONFIG.read_text();mode=CONFIG.stat().st_mode & 0o777
     backup=BASE/('sshd_config.backup-'+str(time.time_ns()));shutil.copy2(CONFIG,backup)
     try:
@@ -47,10 +72,10 @@ def password_policy(enabled):
         if not enabled and effective().get('kbdinteractiveauthentication')!='no':
             raise RuntimeError('键盘交互认证仍然开启，拒绝关闭密码登录')
         for f in BASE.glob('hs_*.json'):verify_auth(f.stem,enabled)
-        run('systemctl','reload',service);run('systemctl','is-active','--quiet',service)
+        reload_sshd()
     except Exception:
         try:
-            write(CONFIG,original,mode);run('sshd','-t');run('systemctl','reload',service)
+            write(CONFIG,original,mode);run('sshd','-t');reload_sshd()
         except Exception as restore_error:
             raise RuntimeError('SSH 配置应用失败，且回滚也失败，请检查 '+str(backup)) from restore_error
         raise
@@ -77,7 +102,7 @@ def detect_public_ip():
     for version,target,urls in sources:
         try:
             result=run('ip','-j','-'+str(version),'route','get',target,
-                       capture_output=True,timeout=2).stdout
+                       capture_output=True,stderr=subprocess.DEVNULL,timeout=2).stdout
             routes=json.loads(result)
             for route in routes if isinstance(routes,list) else []:
                 if not isinstance(route,dict):continue
@@ -151,7 +176,8 @@ def revoke(name):
         p.unlink();return
     if u.pw_uid!=m['uid'] or u.pw_dir!=m['home'] or not u.pw_gecos.startswith('harness-ssh-'):
         raise ValueError('账号身份与记录不符，拒绝删除')
-    run('usermod','--expiredate','1970-01-02','--shell','/usr/sbin/nologin',name)
+    nologin=shutil.which('nologin') or ('/usr/sbin/nologin' if pathlib.Path('/usr/sbin/nologin').exists() else '/sbin/nologin')
+    run('usermod','--expiredate','1970-01-02','--shell',nologin,name)
     # Drop sudo immediately, even if terminating processes or userdel later fails.
     if rule.exists():rule.unlink()
     result=subprocess.run(['pkill','-KILL','-u',str(u.pw_uid)])
@@ -171,34 +197,41 @@ def cleanup():
         except Exception as e:failed=True;print(str(e),file=sys.stderr)
     if failed:raise RuntimeError('部分到期账号清理失败，下一轮重试；请检查 journalctl -u harness-ssh-cleanup')
 def install():
-    for tool in ['systemctl','useradd','usermod','userdel','sshd','pkill','chpasswd','ip']:
+    for tool in ['useradd','usermod','userdel','sshd','pkill','chpasswd','ip']:
         if not shutil.which(tool):raise RuntimeError('缺少依赖: '+tool)
-    if not pathlib.Path('/run/systemd/system').exists():raise RuntimeError('需要正在运行的 systemd')
     run('sshd','-t')
     source=pathlib.Path(__file__).resolve()
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     service=pathlib.Path('/etc/systemd/system/harness-ssh-cleanup.service')
     timer=pathlib.Path('/etc/systemd/system/harness-ssh-cleanup.timer')
-    for p in [APP,service,timer]:
-        if p.exists() and p.resolve()!=source:shutil.copy2(p,BASE/(p.name+'.backup-'+stamp))
+    if APP.exists() and APP.resolve()!=source:shutil.copy2(APP,BASE/(APP.name+'.backup-'+stamp))
     if source!=APP:write(APP,source.read_text(),0o700)
-    write(service,'[Unit]\nDescription=Revoke expired harness SSH accounts\nAfter=local-fs.target\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/harness-ssh cleanup\n',0o644)
-    write(timer,'[Unit]\nDescription=Temporary SSH expiry check\n[Timer]\nOnBootSec=1s\nOnUnitActiveSec=15s\nAccuracySec=1s\nUnit=harness-ssh-cleanup.service\n[Install]\nWantedBy=timers.target\n',0o644)
-    run('systemctl','daemon-reload');run('systemctl','enable','--now',timer.name)
-    run('systemctl','is-active','--quiet',timer.name)
+    if has_systemd():
+        for p in [service,timer]:
+            if p.exists():shutil.copy2(p,BASE/(p.name+'.backup-'+stamp))
+        write(service,'[Unit]\nDescription=Revoke expired harness SSH accounts\nAfter=local-fs.target\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/harness-ssh cleanup\n',0o644)
+        write(timer,'[Unit]\nDescription=Temporary SSH expiry check\n[Timer]\nOnBootSec=1s\nOnUnitActiveSec=15s\nAccuracySec=1s\nUnit=harness-ssh-cleanup.service\n[Install]\nWantedBy=timers.target\n',0o644)
+        run('systemctl','daemon-reload');run('systemctl','enable','--now',timer.name)
+        run('systemctl','is-active','--quiet',timer.name)
+    else:
+        if pathlib.Path('/etc/local.d').exists():
+            start_hook=pathlib.Path('/etc/local.d/harness-ssh.start')
+            write(start_hook,'#!/bin/sh\n/usr/local/sbin/harness-ssh cleanup >/dev/null 2>&1 || true\n',0o755)
+            if shutil.which('rc-update'):
+                subprocess.run(['rc-update','add','local','default'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        ensure_cleanup_daemon()
     run('groupadd','--force','harness-temp')
     shortcut=pathlib.Path('/usr/local/bin/hssh')
+    shortcut.parent.mkdir(parents=True,exist_ok=True)
     if shortcut.exists():shutil.copy2(shortcut,BASE/('hssh.backup-'+stamp))
     write(shortcut,'#!/bin/sh\nif [ "$(id -u)" -ne 0 ]; then exec sudo /usr/local/sbin/harness-ssh "$@"; fi\nexec /usr/local/sbin/harness-ssh "$@"\n',0o755)
-    # On upgrade, remove the old group-specific Match block while preserving
-    # the server's current global password authentication setting.
     current=CONFIG.read_text()
     if BEGIN in current and 'Match Group harness-temp' in current:
         password_policy(password_enabled())
     cleanup();print('安装完成，再次启动输入：hssh')
 def create(args):
     if not APP.exists():raise RuntimeError('请先运行 install')
-    run('systemctl','is-active','--quiet','harness-ssh-cleanup.timer')
+    ensure_cleanup_daemon()
     name=valid_name(args.name or 'hs_'+secrets.token_hex(4))
     try:pwd.getpwnam(name)
     except KeyError:pass
@@ -209,10 +242,11 @@ def create(args):
         raise RuntimeError('缺少 sudo/visudo，无法创建高权限账号')
     host=connection_host(args.host)
     seconds=duration_seconds(args.duration)
+    user_shell='/bin/bash' if pathlib.Path('/bin/bash').exists() else '/bin/sh'
     # Record creation immediately after useradd; failure rolls back the new account.
     created=False
     try:
-        run('useradd','--create-home','--user-group','--shell','/bin/bash','--comment','harness-ssh-'+name,name);created=True
+        run('useradd','--create-home','--user-group','--shell',user_shell,'--comment','harness-ssh-'+name,name);created=True
         u=pwd.getpwnam(name)
         expires=int(time.time())+seconds
         write(meta(name),json.dumps({'uid':u.pw_uid,'home':u.pw_dir,'expires':expires,'duration':args.duration,'auth':'password','role':args.role}))
@@ -220,6 +254,7 @@ def create(args):
         verify_auth(name,True)
         password=secrets.token_urlsafe(24)
         run('chpasswd',input=name+':'+password+'\n',stdout=subprocess.DEVNULL)
+        subprocess.run(['passwd','-u',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         # Day-granularity backstop; timer is responsible for sub-day deadlines.
         day=datetime.datetime.fromtimestamp(expires,datetime.timezone.utc).date()+datetime.timedelta(days=1)
         run('usermod','--expiredate',str(day),name)
