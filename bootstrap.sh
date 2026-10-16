@@ -37,9 +37,10 @@ esac
 tmp="$(mktemp -d /tmp/harness-ssh-install.XXXXXXXX)"
 trap 'rm -rf -- "$tmp"' EXIT INT TERM
 base='https://raw.githubusercontent.com/org100/temp-ssh-tool/main'
+ts="$(date +%s)"
 for file in start.sh harness-ssh.py; do
     curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
-        --connect-timeout 15 --max-time 120 --retry 2 "$base/$file" -o "$tmp/$file"
+        --connect-timeout 15 --max-time 120 --retry 2 "$base/$file?t=$ts" -o "$tmp/$file"
 done
 sh -n "$tmp/start.sh"
 sh "$tmp/start.sh" "$@"
