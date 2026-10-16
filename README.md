@@ -1,6 +1,6 @@
 # TempSSH
 
-限时 SSH 密码账号，到期自动回收。支持 Debian 12/13、Ubuntu 22.04/24.04。
+限时 SSH 密码账号，到期自动回收。支持 Debian 12/13、Ubuntu 22.04/24.04和apline。
 
 ## 一键安装 / 更新
 
