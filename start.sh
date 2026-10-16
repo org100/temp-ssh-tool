@@ -31,8 +31,8 @@ case "${ID:-}" in
         fi
         if [ -n "$packages" ]; then
             printf '首次使用，正在安装缺失依赖：%s\n' "$packages"
-            apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update || exit 1
-            DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends $packages || exit 1
+            apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update || { printf '更新软件源失败，请检查网络或 apt 源。\n' >&2; exit 1; }
+            DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends $packages || { printf '安装依赖失败，请检查 apt 软件源。\n' >&2; exit 1; }
         fi
         if [ "$new_ssh" -eq 1 ]; then
             install -d -m 0755 /run/sshd
