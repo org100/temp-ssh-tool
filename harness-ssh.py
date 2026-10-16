@@ -147,11 +147,16 @@ def valid_name(name):
     if not re.fullmatch(r'hs_[a-z0-9]{6,20}',name): raise ValueError('账号必须为 hs_ + 6–20 位小写字母或数字')
     return name
 
-def write(path,text,mode=0o600):
-    path=pathlib.Path(path); tmp=path.with_name(path.name+'.tmp')
-    with open(tmp,'w') as f:
-        os.chmod(tmp,mode);f.write(text);f.flush();os.fsync(f.fileno())
-    os.replace(tmp,path)
+def write(path, text, mode=0o600):
+  path = pathlib.Path(path)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  tmp = path.with_name(path.name + '.tmp')
+  with open(tmp, 'w') as f:
+    os.chmod(tmp, mode)
+    f.write(text)
+    f.flush()
+    os.fsync(f.fileno())
+  os.replace(tmp, path)
 def meta(name): return BASE/(valid_name(name)+'.json')
 def sudoers_path(name): return SUDOERS_DIR/('harness-ssh-'+valid_name(name))
 def grant_sudo(name):
