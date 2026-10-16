@@ -58,7 +58,11 @@ def ensure_cleanup_daemon():
     pidfile=BASE/'.cleanup.pid'
     if pidfile.exists():
         pid=pidfile.read_text().strip()
-        if pid.isdigit() and pathlib.Path(f'/proc/{pid}').exists():return
+        cmdline_file=pathlib.Path(f'/proc/{pid}/cmdline')
+        if pid.isdigit() and cmdline_file.exists():
+            try:
+                if 'harness-ssh' in cmdline_file.read_bytes().decode('utf-8','ignore'):return
+            except OSError:pass
     cmd="echo $$ > /var/lib/harness-ssh/.cleanup.pid; while :; do sleep 15; /usr/local/sbin/harness-ssh cleanup >/dev/null 2>&1 || true; done"
     subprocess.Popen(['/bin/sh','-c',cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -259,7 +263,7 @@ def create(args):
         verify_auth(name,True)
         password=secrets.token_urlsafe(24)
         run('chpasswd',input=name+':'+password+'\n',stdout=subprocess.DEVNULL)
-        subprocess.run(['passwd','-u',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['usermod','-U',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         # Day-granularity backstop; timer is responsible for sub-day deadlines.
         day=datetime.datetime.fromtimestamp(expires,datetime.timezone.utc).date()+datetime.timedelta(days=1)
         run('usermod','--expiredate',str(day),name)
