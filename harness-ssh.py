@@ -198,6 +198,7 @@ def revoke(name):
     if keydir.exists():shutil.rmtree(keydir)
     print('已撤销:',name)
 def cleanup():
+    ensure_cleanup_daemon()
     failed=False
     for p in BASE.glob('hs_*.json'):
         try:
