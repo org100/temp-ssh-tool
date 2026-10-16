@@ -7,7 +7,7 @@
 需 `curl`，以 `root` 或具备 `sudo` 权限的账号运行：
 
 ```bash
-curl -fsSLO [https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstrap.sh](https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstrap.sh) && sh bootstrap.sh
+curl -fsSL "https://raw.githubusercontent.com/org100/temp-ssh-tool/main/bootstrap.sh?t=$(date +%s)" -o bootstrap.sh && sh bootstrap.sh
 
 ```
 
